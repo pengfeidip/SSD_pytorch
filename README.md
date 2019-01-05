@@ -1,6 +1,8 @@
 --- pengfei --- 2019年1月5日17:39:58
 
-对https://github.com/amdegroot/ssd.pytorch的一些改造。使得在0.4.1版本的pytorch 也能获得同样的效果.
+对  https://github.com/amdegroot/ssd.pytorch 的一些改造。使得在0.4.1版本的pytorch 也能获得同样的效果。
+
+目前 `train.py` 文件留作备份，以`pf_test.py` 作为train的主文件
 
 ---
 
@@ -13,7 +15,7 @@ A [PyTorch](http://pytorch.org/) implementation of [Single Shot MultiBox Detecto
 
 <img align="right" src= "https://github.com/amdegroot/ssd.pytorch/blob/master/doc/ssd.png" height = 400/>
 
-### Table of Contents
+## Table of Contents
 - <a href='#installation'>Installation</a>
 - <a href='#datasets'>Datasets</a>
 - <a href='#training-ssd'>Train</a>
