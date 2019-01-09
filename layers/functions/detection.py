@@ -10,7 +10,7 @@ class Detect(Function):
     scores and threshold to a top_k number of output predictions for both
     confidence score and locations.
     """
-    def __init__(self, num_classes, bkg_label, top_k, conf_thresh, nms_thresh):
+    def __init__(self, num_classes, bkg_label, top_k, conf_thresh, nms_thresh, keep_top_k):
         self.num_classes = num_classes
         self.background_label = bkg_label
         self.top_k = top_k
@@ -20,6 +20,7 @@ class Detect(Function):
             raise ValueError('nms_threshold must be non negative.')
         self.conf_thresh = conf_thresh
         self.variance = cfg['variance']
+        self.keep_top_k = keep_top_k # keep top_k for per image
 
     def forward(self, loc_data, conf_data, prior_data):
         """
@@ -32,7 +33,7 @@ class Detect(Function):
                 Shape: [1,num_priors,4]
         """
         num = loc_data.size(0)  # batch size
-        num_priors = prior_data.size(0)
+        num_priors = prior_data.size(0) #  number of default bboxes
         output = torch.zeros(num, self.num_classes, self.top_k, 5)
         conf_preds = conf_data.view(num, num_priors,
                                     self.num_classes).transpose(2, 1)
@@ -40,11 +41,15 @@ class Detect(Function):
         # Decode predictions into bboxes.
         for i in range(num):
             decoded_boxes = decode(loc_data[i], prior_data, self.variance)
-            # For each class, perform nms
+
+            #For each class, perform nms
             conf_scores = conf_preds[i].clone()
 
+            # --- pengfei --- a mask tensor of non_background bounding boxes
+            non_bg_mask = 1- (torch.argmax(conf_scores, dim=1) == 0)
+
             for cl in range(1, self.num_classes):
-                c_mask = conf_scores[cl].gt(self.conf_thresh)
+                c_mask = conf_scores[cl].gt(self.conf_thresh) # 找到大于class_confidence_threshold 的bboxes
                 scores = conf_scores[cl][c_mask]
                 if scores.nelement() == 0:
                     continue
@@ -55,8 +60,32 @@ class Detect(Function):
                 output[i, cl, :count] = \
                     torch.cat((scores[ids[:count]].unsqueeze(1),
                                boxes[ids[:count]]), 1)
+
+        #我知道作者为什么要这样做了，
+        # 因为作者为了更方便的统计各个类别的AP，因此分类保存检出结果, 这样导致每个必须每各类的tensor容器足够大
         flt = output.contiguous().view(num, -1, 5)
+
+        # sort every bounding box by confidence
         _, idx = flt[:, :, 0].sort(1, descending=True)
+        batch_idx = torch.tensor(range(num)).unsqueeze(1) # generate the batch idx
+
+        flt = flt[batch_idx, idx, :]
+
+        #  keep top k bounding boxes for every image
+        #  (by set the rank greater than keep_top_k to 0)
+        flt[:, self.keep_top_k:, :] = 0
+
+        # already keep the keep_top_k, then return the origin
         _, rank = idx.sort(1)
-        flt[(rank < self.top_k).unsqueeze(-1).expand_as(flt)].fill_(0)
-        return output
+        flt = flt[batch_idx, rank, :]
+        new_output = flt.reshape(num, self.num_classes, self.top_k, 5)
+        """
+        --- pengfei --- 2019-1-9 11:23:34
+        following is the original code, 
+        I change it , because I want introduce the keep_top_k parameter
+        """
+        # flt = output.contiguous().view(num, -1, 5)
+        # _, idx = flt[:, :, 0].sort(1, descending=True)
+        # _, rank = idx.sort(1)
+        # flt[(rank < self.top_k).unsqueeze(-1).expand_as(flt)].fill_(0)
+        return new_output
