@@ -31,7 +31,7 @@ parser.add_argument('--dataset_root', default=VOC_ROOT,
                     help='Dataset root directory path')
 parser.add_argument('--basenet', default='vgg16_reducedfc.pth',
                     help='Pretrained base model')
-parser.add_argument('--batch_size', default=24, type=int,
+parser.add_argument('--batch_size', default=32, type=int,
                     help='Batch size for training')
 parser.add_argument('--resume', default=None, type=str,
                     help='Checkpoint state_dict file to resume training from')
@@ -156,7 +156,7 @@ def train():
 	# create batch iterator
 	step_index = 0
 	iteration = 0
-	max_epoches = cfg["max_iter"] / epoch_size
+	max_epoches = int(cfg["max_iter"] / epoch_size)
 	for epoch in range(int(max_epoches+1)):
 		t0 = time.time()
 		for images, targets in data_loader:
@@ -183,7 +183,7 @@ def train():
 			loss = loss_l + loss_c
 			loss.backward()
 			optimizer.step()
-			t1 = time.time()
+
 			loc_loss += loss_l.item()
 			conf_loss += loss_c.item()
 
@@ -192,7 +192,7 @@ def train():
 			total_loss_epoch += loss.item()
 			writer.add_scalar("loss/total_loss_iterations", loss.item(), iteration)
 
-			if (iteration + 1) % epoch_size == 0:
+			if iteration % epoch_size == 0:
 				writer.add_scalar("loss/loc_loss", loc_loss_epoch / len(dataset), epoch)
 				writer.add_scalar("loss/conf_loss", conf_loss_epoch / len(dataset), epoch)
 				writer.add_scalar("loss/total_loss", total_loss_epoch / len(dataset), epoch)
@@ -200,17 +200,21 @@ def train():
 				conf_loss_epoch = 0.0
 				total_loss_epoch = 0.0
 
-			if (iteration + 1) % 10 == 0:
-				print('timer: %.4f sec.' % (t1 - t0))
-				print('iter [' + repr(iteration + 1) + "/" + str(cfg["max_iter"]) + '] Loss: %.4f ||' % (loss.item()),
+			if iteration % 10 == 0:
+				t1 = time.time()
+				print('Every 10 iterations timer: %.4f sec.' % (t1 - t0))
+				print('iter [' + repr(iteration + 1) + "/" + str(cfg["max_iter"]) + '] ||' +
+				      'epoch [' + str(epoch+1) + "/" + str(max_epoches) + "] ||" +
+				      'Batch-Loss: %.4f ||' % (loss.item()),
 				      end=' ')
+				t0 = time.time()
 
-			if (iteration+1) % 5000 == 0:
+			if iteration % 5000 == 0:
 				print('Saving state, iter:', iteration)
 				torch.save(ssd_net.state_dict(), 'weights/ssd300_voc_pf_' +
 				           repr(iteration+1) + '.pth')
 
-			t0 = time.time()
+
 
 		torch.save(ssd_net.state_dict(),
 	            args.save_folder + '' + args.dataset + '.pth')
@@ -237,35 +241,8 @@ def weights_init(m):
 		m.bias.data.zero_()
 
 
-def create_vis_plot(_xlabel, _ylabel, _title, _legend):
-	return viz.line(
-		X=torch.zeros((1,)).cpu(),
-		Y=torch.zeros((1, 3)).cpu(),
-		opts=dict(
-			xlabel=_xlabel,
-			ylabel=_ylabel,
-			title=_title,
-			legend=_legend
-		)
-	)
 
 
-def update_vis_plot(iteration, loc, conf, window1, window2, update_type,
-                    epoch_size=1):
-	viz.line(
-		X=torch.ones((1, 3)).cpu() * iteration,
-		Y=torch.Tensor([loc, conf, loc + conf]).unsqueeze(0).cpu() / epoch_size,
-		win=window1,
-		update=update_type
-	)
-	# initialize epoch plot on first iteration
-	if iteration == 0:
-		viz.line(
-			X=torch.zeros((1, 3)).cpu(),
-			Y=torch.Tensor([loc, conf, loc + conf]).unsqueeze(0).cpu(),
-			win=window2,
-			update=True
-		)
 
 
 if __name__ == '__main__':
