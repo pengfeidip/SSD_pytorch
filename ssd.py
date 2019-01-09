@@ -19,13 +19,15 @@ class SSD(nn.Module):
 
     Args:
         phase: (string) Can be "test" or "train"
-        size: input image size
-        base: VGG16 layers for input, size of either 300 or 500
-        extras: extra layers that feed to multibox loc and conf layers
-        head: "multibox head" consists of loc and conf conv layers
+        size: (int) input image size
+        base: (VGG) VGG16 layers for input, size of either 300 or 500
+        extras: (list) extra layers that feed to multibox loc and conf layers
+        head: (list) "multibox head" consists of loc and conf conv layers
+        num_class: (int )number of classinclude the background
+        top_k: (int) when phase is test,select the top k default boxes to parse, default=20
     """
 
-    def __init__(self, phase, size, base, extras, head, num_classes, top_k=20):
+    def __init__(self, phase, size, base, extras, head, num_classes, top_k=400, keep_top_k=200):
         super(SSD, self).__init__()
         self.phase = phase
         self.num_classes = num_classes
@@ -43,10 +45,13 @@ class SSD(nn.Module):
         self.loc = nn.ModuleList(head[0]) # --- pengfei --- conv layers for getting location
         self.conf = nn.ModuleList(head[1])
 
-        self.top_k = top_k
+
         if phase == 'test':
+            self.top_k = top_k
+            self.keep_top_k = keep_top_k
             self.softmax = nn.Softmax(dim=-1)
-            self.detect = Detect(num_classes, bkg_label=0, top_k=self.top_k, conf_thresh=.01, nms_thresh=.5)
+            self.detect = Detect(num_classes, bkg_label=0, top_k=self.top_k,
+                                 keep_top_k=self.keep_top_k, conf_thresh=.01, nms_thresh=.45)
 
     def forward(self, x):
         """Applies network layers and ops on input image(s) x.
@@ -201,7 +206,15 @@ mbox = {
 }
 
 
-def build_ssd(phase, size=300, num_classes=21):
+def build_ssd(phase, size=300, num_classes=21, top_k=400):
+    """
+    :param phase: (str) "train" or " test"
+    :param size:  (int) im size of NN inputs, default{300}
+    :param num_classes: (int) number of classes, include background default 21 for VOC
+    :param top_k:  (int) only when phase is "test", top_k is meaningful, it means how many
+                    boxes in intra-class NMS will be considered
+    :return: (SSD) a SSD object
+    """
     if phase != "test" and phase != "train":
         print("ERROR: Phase: " + phase + " not recognized")
         return
@@ -212,4 +225,4 @@ def build_ssd(phase, size=300, num_classes=21):
     base_, extras_, head_ = multibox(vgg(base[str(size)], 3),
                                      add_extras(extras[str(size)], 1024),
                                      mbox[str(size)], num_classes)
-    return SSD(phase, size, base_, extras_, head_, num_classes)
+    return SSD(phase, size, base_, extras_, head_, num_classes, top_k)
